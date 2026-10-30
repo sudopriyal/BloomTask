@@ -96,7 +96,20 @@ async function handleAuth() {
       emit('close')
     }, 700)
   } catch (err) {
-    errorMessage.value = err.message || 'Authentication error. Please check your credentials.'
+    if (err.message && err.message.toLowerCase().includes('failed to fetch')) {
+      showDevSettings.value = true
+      errorMessage.value = `Unable to connect to Supabase ('Failed to fetch').
+
+Common causes:
+1. Wrong URL format: It must be the Project API URL (e.g. 'https://your-ref.supabase.co'), NOT a 'postgres://...' connection string.
+2. Typos: Note that Supabase URLs end in '.co', not '.com'.
+3. Paused project: Free projects pause after 1 week. Check your Supabase dashboard.
+4. Ad-blockers: Try pausing ad-blockers for localhost.
+
+You can inspect or correct your keys below, or click 'Reset to Local Mode'.`
+    } else {
+      errorMessage.value = err.message || 'Authentication error. Please check your credentials.'
+    }
   } finally {
     isLoading.value = false
   }
@@ -119,19 +132,28 @@ function handleSaveDevSettings() {
   errorMessage.value = ''
   successMessage.value = ''
 
-  if (!devUrl.value && !devKey.value) {
-    saveSupabaseConfig('', '')
-    successMessage.value = 'Switched to local Demo Mode.'
-    return
-  }
+  try {
+    if (!devUrl.value.trim() && !devKey.value.trim()) {
+      handleResetToDemo()
+      return
+    }
 
-  if (!devUrl.value.startsWith('http')) {
-    errorMessage.value = 'Project URL must start with https://'
-    return
+    saveSupabaseConfig(devUrl.value, devKey.value)
+    const cfg = getStoredSupabaseConfig()
+    devUrl.value = cfg.url
+    devKey.value = cfg.anonKey
+    successMessage.value = 'Supabase credentials saved successfully! 🌸'
+  } catch (e) {
+    errorMessage.value = e.message
   }
+}
 
-  saveSupabaseConfig(devUrl.value, devKey.value)
-  successMessage.value = 'Supabase credentials saved successfully! 🌸'
+function handleResetToDemo() {
+  saveSupabaseConfig('', '')
+  devUrl.value = ''
+  devKey.value = ''
+  errorMessage.value = ''
+  successMessage.value = 'Reset to local Demo Mode. You can now sign up/in instantly!'
 }
 </script>
 
@@ -334,13 +356,23 @@ function handleSaveDevSettings() {
               placeholder="Anon Public API Key"
               class="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-bloom-cardNight border border-bloom-200 dark:border-bloom-borderNight text-[11px] font-mono focus:ring-1 focus:ring-bloom-400 focus:outline-none"
             />
-            <button
-              type="button"
-              @click="handleSaveDevSettings"
-              class="w-full py-1.5 rounded-lg bg-bloom-500 hover:bg-bloom-600 text-white text-[11px] font-bold font-soft transition-colors"
-            >
-              Save Database Keys
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                @click="handleSaveDevSettings"
+                class="flex-1 py-1.5 rounded-lg bg-bloom-500 hover:bg-bloom-600 text-white text-[11px] font-bold font-soft transition-colors shadow-2xs"
+              >
+                Save Keys
+              </button>
+              <button
+                type="button"
+                @click="handleResetToDemo"
+                class="px-2.5 py-1.5 rounded-lg border border-bloom-300 dark:border-bloom-borderNight text-bloom-700 dark:text-bloom-300 hover:bg-bloom-100 text-[11px] font-medium font-soft transition-colors"
+                title="Clear credentials and use local storage demo"
+              >
+                Reset to Local
+              </button>
+            </div>
           </div>
         </div>
       </div>

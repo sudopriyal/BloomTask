@@ -130,13 +130,27 @@ export function getStoredSupabaseConfig() {
   return { url: '', anonKey: '', fromEnv: false }
 }
 
+export function formatSupabaseUrl(rawUrl) {
+  if (!rawUrl) return ''
+  let url = rawUrl.trim()
+  if (url.startsWith('postgres://') || url.startsWith('postgresql://')) {
+    throw new Error('You entered a PostgreSQL database string (postgres://...). The frontend requires your Supabase Project URL (https://xyz.supabase.co), found in Supabase Dashboard > Project Settings > API.')
+  }
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url
+  }
+  return url.replace(/\/+$/, '')
+}
+
 export function saveSupabaseConfig(url, anonKey) {
   if (!url || !anonKey) {
     localStorage.removeItem(SUPABASE_CONFIG_KEY)
     supabaseClient = null
     return false
   }
-  localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify({ url: url.trim(), anonKey: anonKey.trim(), fromEnv: false }))
+  const cleanUrl = formatSupabaseUrl(url)
+  const cleanKey = anonKey.trim()
+  localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify({ url: cleanUrl, anonKey: cleanKey, fromEnv: false }))
   initSupabase()
   return true
 }
@@ -145,7 +159,8 @@ export function initSupabase() {
   const config = getStoredSupabaseConfig()
   if (config.url && config.anonKey) {
     try {
-      supabaseClient = createClient(config.url, config.anonKey)
+      const cleanUrl = formatSupabaseUrl(config.url)
+      supabaseClient = createClient(cleanUrl, config.anonKey.trim())
       return supabaseClient
     } catch (err) {
       console.warn('Could not initialize Supabase client:', err)
