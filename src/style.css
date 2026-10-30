@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom Scrollbar in Bloom Pink */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #F472B6;
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #DB2777;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #EC4899;
+}
+
+/* Glassmorphism Pink effects */
+.bloom-glass-light {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(251, 207, 232, 0.7);
+}
+
+.bloom-glass-dark {
+  background: rgba(37, 21, 34, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(80, 27, 62, 0.7);
+}
+
+/* Animations */
+@keyframes floatPetal {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(3deg);
+  }
+}
+
+.animate-petal {
+  animation: floatPetal 4s ease-in-out infinite;
+}
+
+/* Dragging state styling */
+.ghost-card {
+  opacity: 0.4;
+  border: 2px dashed #F472B6 !important;
+}
+
+.drag-card {
+  transform: rotate(2deg) scale(1.02);
+  box-shadow: 0 10px 25px -5px rgba(244, 114, 182, 0.5);
+  cursor: grabbing !important;
+}
