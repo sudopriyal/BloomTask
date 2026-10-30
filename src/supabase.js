@@ -194,7 +194,18 @@ export async function signUpUser(email, password) {
       password,
     })
     if (error) throw error
-    return data.user
+
+    // In Supabase, if email is already taken, identities array is empty
+    if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      throw new Error('An account with this email is already registered. Please switch to Sign In.')
+    }
+
+    const needsEmailConfirmation = !data?.session
+    return {
+      user: data?.user,
+      session: data?.session,
+      needsEmailConfirmation
+    }
   }
 
   // Fallback demo auth
@@ -205,7 +216,7 @@ export async function signUpUser(email, password) {
     isDemo: true
   }
   localStorage.setItem(DEMO_USER_KEY, JSON.stringify(demoUser))
-  return demoUser
+  return { user: demoUser, session: null, needsEmailConfirmation: false }
 }
 
 export async function signInUser(email, password) {
@@ -214,8 +225,16 @@ export async function signInUser(email, password) {
       email,
       password,
     })
-    if (error) throw error
-    return data.user
+    if (error) {
+      if (error.message && error.message.toLowerCase().includes('email not confirmed')) {
+        throw new Error('Email not confirmed yet! Please click the confirmation link in your email inbox, or turn off "Confirm email" in Supabase Authentication settings.')
+      }
+      if (error.message && error.message.toLowerCase().includes('invalid login credentials')) {
+        throw new Error('Invalid email or password. Please verify your credentials or create a new account.')
+      }
+      throw error
+    }
+    return { user: data.user, session: data.session }
   }
 
   // Fallback demo auth
@@ -226,7 +245,7 @@ export async function signInUser(email, password) {
     isDemo: true
   }
   localStorage.setItem(DEMO_USER_KEY, JSON.stringify(demoUser))
-  return demoUser
+  return { user: demoUser, session: null }
 }
 
 export async function signOutUser() {
