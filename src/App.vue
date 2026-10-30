@@ -58,7 +58,6 @@ function toggleTheme() {
 const currentUser = ref(null)
 const isConnected = ref(false)
 const showAuthModal = ref(false)
-const authModalTab = ref('auth')
 
 // =================== TASK STATE ===================
 const rawTasks = ref([])
@@ -339,18 +338,8 @@ function handleDragEnd() {
   }
 }
 
-function openAuthWithTab(tab = 'auth') {
-  authModalTab.value = tab
-  showAuthModal.value = true
-}
-
 function handleAuthSuccess(user) {
   currentUser.value = user
-  isConnected.value = isSupabaseConnected()
-  fetchTasks()
-}
-
-function handleConfigUpdated() {
   isConnected.value = isSupabaseConnected()
   fetchTasks()
 }
@@ -366,8 +355,7 @@ function handleConfigUpdated() {
       :today-completed-count="todayCompletedCount"
       :today-total-count="todayTotalCount"
       @toggle-theme="toggleTheme"
-      @open-auth="openAuthWithTab('auth')"
-      @open-settings="openAuthWithTab('supabase')"
+      @open-auth="showAuthModal = true"
     />
 
     <!-- Main Content Container -->
@@ -462,12 +450,10 @@ function handleConfigUpdated() {
 
     <AuthModal
       :is-open="showAuthModal"
-      :initial-tab="authModalTab"
       :user="currentUser"
       :is-supabase-connected="isConnected"
       @close="showAuthModal = false"
       @auth-success="handleAuthSuccess"
-      @config-updated="handleConfigUpdated"
     />
 
     <!-- Mobile Quick Add Floating Action Button (FAB) -->

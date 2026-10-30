@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { Sun, Moon, Sparkles, User, Settings, CheckCircle2 } from 'lucide-vue-next'
+import { Sun, Moon, Sparkles, User, CheckCircle2 } from 'lucide-vue-next'
 import { formatFullDate } from '../utils/dateUtils'
 
 const props = defineProps({
@@ -26,7 +26,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['toggle-theme', 'open-auth', 'open-settings'])
+const emit = defineEmits(['toggle-theme', 'open-auth'])
 
 const currentDateFormatted = computed(() => {
   return formatFullDate(new Date())
@@ -87,17 +87,8 @@ const bloomMoodText = computed(() => {
             ></span>
             <User class="w-3.5 h-3.5" />
             <span class="hidden sm:inline">
-              {{ user ? (user.email ? user.email.split('@')[0] : 'My Account') : 'Sign In / Sync' }}
+              {{ user ? (user.email ? user.email.split('@')[0] : 'My Account') : 'Sign In / Sign Up' }}
             </span>
-          </button>
-
-          <!-- Config / Settings modal -->
-          <button
-            @click="emit('open-settings')"
-            class="p-2.5 rounded-full bg-bloom-100 dark:bg-bloom-cardNight border border-bloom-200 dark:border-bloom-borderNight text-bloom-700 dark:text-bloom-300 hover:bg-bloom-200 dark:hover:bg-bloom-plum/70 transition-all duration-300 shadow-sm active:scale-95"
-            title="Database & Settings"
-          >
-            <Settings class="w-4 h-4" />
           </button>
         </div>
       </div>
