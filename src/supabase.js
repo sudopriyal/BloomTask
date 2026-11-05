@@ -4,109 +4,14 @@ import { getTodayString, addDays } from './utils/dateUtils'
 // Storage keys
 const SUPABASE_CONFIG_KEY = 'bloom_task_supabase_config'
 const LOCAL_TASKS_KEY = 'bloom_task_local_items'
+const LOCAL_SUBJECTS_KEY = 'bloom_task_local_subjects'
+const LOCAL_COMPLETIONS_KEY = 'bloom_task_local_completions'
 const DEMO_USER_KEY = 'bloom_task_demo_user'
 
-export const SUPABASE_SQL_SCHEMA = `-- Bloom Task SQL Table Definition
--- Run this in your Supabase SQL Editor:
+export const DEFAULT_SUBJECTS = []
 
-create table if not exists tasks (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade,
-  title text not null,
-  description text,
-  subject text default 'General',
-  due_date date not null,
-  is_completed boolean default false,
-  is_recurring boolean default false,
-  recurring_start_date date,
-  recurring_end_date date,
-  position integer default 0,
-  created_at timestamptz default now()
-);
-
--- Enable Row Level Security
-alter table tasks enable row level security;
-
--- Policies for Authenticated Users
-create policy "Users can manage their own tasks"
-  on tasks for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
-`
-
-// Default demo tasks in various pink pastel subjects
 export function getDefaultDemoTasks() {
-  const today = getTodayString()
-  return [
-    {
-      id: 'demo-1',
-      title: '🌸 Biology: Cellular Respiration Diagram',
-      description: 'Review Krebs cycle and draw the mitochondrial electron transport chain.',
-      subject: 'Biology',
-      due_date: today,
-      is_completed: false,
-      is_recurring: false,
-      position: 0,
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'demo-2',
-      title: '✨ Daily Math Problem Set (15 mins)',
-      description: 'Solve 5 calculus differentiation problems for speed drill.',
-      subject: 'Math',
-      due_date: today,
-      is_completed: false,
-      is_recurring: true,
-      recurring_start_date: today,
-      recurring_end_date: addDays(today, 6),
-      position: 1,
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'demo-3',
-      title: '📖 Literature: Read Chapter 5-7 & Note Themes',
-      description: 'Annotate floral and romantic motifs in the poetry collection.',
-      subject: 'Literature',
-      due_date: addDays(today, 1),
-      is_completed: false,
-      is_recurring: false,
-      position: 2,
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'demo-4',
-      title: '🧪 Chemistry: Acid-Base Titration Lab Prep',
-      description: 'Calculate molarity and review safety protocols before lab.',
-      subject: 'Chemistry',
-      due_date: addDays(today, 3),
-      is_completed: false,
-      is_recurring: false,
-      position: 3,
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'demo-5',
-      title: '🏛️ History: Modern European Timeline Review',
-      description: 'Consolidate flashcards for the midterm review session.',
-      subject: 'History',
-      due_date: addDays(today, 5),
-      is_completed: false,
-      is_recurring: false,
-      position: 4,
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'demo-6',
-      title: '🎀 Weekly Study Plan & Workspace Reset',
-      description: 'Organize study desk, sharpen pencils, and color-code study notes.',
-      subject: 'Personal',
-      due_date: today,
-      is_completed: true,
-      is_recurring: false,
-      position: 5,
-      created_at: new Date().toISOString()
-    }
-  ]
+  return []
 }
 
 // Client initialization
@@ -204,9 +109,13 @@ export async function getCurrentUser() {
 
 export async function signUpUser(email, password) {
   if (supabaseClient) {
+    const redirectUrl = typeof window !== 'undefined' ? window.location.origin : undefined
     const { data, error } = await supabaseClient.auth.signUp({
       email,
       password,
+      options: {
+        emailRedirectTo: redirectUrl
+      }
     })
     if (error) throw error
 
@@ -270,6 +179,24 @@ export async function signOutUser() {
   localStorage.removeItem(DEMO_USER_KEY)
 }
 
+export async function sendPasswordResetEmail(email) {
+  if (!supabaseClient) {
+    throw new Error('Not connected to Supabase.')
+  }
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/?reset_password=true`
+  })
+  if (error) throw error
+}
+
+export async function updateUserPassword(newPassword) {
+  if (!supabaseClient) {
+    throw new Error('Not connected to Supabase.')
+  }
+  const { error } = await supabaseClient.auth.updateUser({ password: newPassword })
+  if (error) throw error
+}
+
 export function onAuthStateChange(callback) {
   if (supabaseClient) {
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((event, session) => {
@@ -280,19 +207,207 @@ export function onAuthStateChange(callback) {
   return () => {}
 }
 
-// =================== TASK CRUD ===================
+// =================== PROFILES TABLE ===================
+
+export async function loadProfile(user) {
+  if (supabaseClient && user && !user.isDemo) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+
+      if (!error && data) return data
+
+      // If missing row, insert profile
+      const defaultName = user.email ? user.email.split('@')[0] : 'Bloom Student'
+      const { data: newProfile } = await supabaseClient
+        .from('profiles')
+        .upsert({ id: user.id, display_name: defaultName, theme_preference: 'light', daily_task_goal: 5 })
+        .select()
+        .single()
+
+      if (newProfile) return newProfile
+    } catch (e) {
+      console.warn('Profile fetch note:', e)
+    }
+  }
+
+  return {
+    display_name: user?.email ? user.email.split('@')[0] : 'Bloom Student',
+    theme_preference: 'light',
+    daily_task_goal: 5
+  }
+}
+
+export async function updateProfile(updates, user) {
+  if (supabaseClient && user && !user.isDemo) {
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+      .select()
+      .single()
+
+    if (!error && data) return data
+  }
+  return updates
+}
+
+// =================== SUBJECTS TABLE ===================
+
+export async function loadSubjects(user) {
+  if (supabaseClient && user && !user.isDemo) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('subjects')
+        .select('*')
+        .order('position', { ascending: true })
+
+      if (!error && data) {
+        return data
+      }
+    } catch (e) {
+      console.warn('Error fetching subjects from Supabase:', e)
+    }
+    return []
+  }
+
+  // Local storage fallback for guest/demo only
+  try {
+    const stored = localStorage.getItem(LOCAL_SUBJECTS_KEY)
+    if (stored) return JSON.parse(stored)
+  } catch {}
+
+}
+
+
+export async function createSubject(subject, user) {
+  if (supabaseClient && user && !user.isDemo) {
+    const { data, error } = await supabaseClient
+      .from('subjects')
+      .insert({
+        user_id: user.id,
+        name: subject.name.trim(),
+        color_theme: subject.color_theme || 'pink',
+        icon: subject.icon || 'BookOpen',
+        position: subject.position || 0
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  }
+
+  const subjects = await loadSubjects(user)
+  const newSub = {
+    ...subject,
+    id: 'sub-' + Date.now(),
+    position: subjects.length
+  }
+  subjects.push(newSub)
+  localStorage.setItem(LOCAL_SUBJECTS_KEY, JSON.stringify(subjects))
+  return newSub
+}
+
+export async function deleteSubject(subjectId, user) {
+  if (supabaseClient && user && !user.isDemo) {
+    const { error } = await supabaseClient
+      .from('subjects')
+      .delete()
+      .eq('id', subjectId)
+    if (error) throw error
+    return true
+  }
+
+  const subjects = await loadSubjects(user)
+  const filtered = subjects.filter(s => s.id !== subjectId)
+  localStorage.setItem(LOCAL_SUBJECTS_KEY, JSON.stringify(filtered))
+  return true
+}
+
+// =================== TASK_COMPLETIONS TABLE ===================
+
+export async function loadCompletions(user) {
+  if (supabaseClient && user && !user.isDemo) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('task_completions')
+        .select('*')
+
+      if (!error && data) {
+        return data
+      }
+    } catch (e) {
+      console.warn('Error loading completions from Supabase:', e)
+    }
+  }
+
+  try {
+    const stored = localStorage.getItem(LOCAL_COMPLETIONS_KEY)
+    if (stored) return JSON.parse(stored)
+  } catch {}
+
+  return []
+}
+
+export async function setTaskCompletionDate(taskId, completedDate, isCompleted, user) {
+  if (supabaseClient && user && !user.isDemo) {
+    if (isCompleted) {
+      await supabaseClient
+        .from('task_completions')
+        .upsert(
+          { task_id: taskId, user_id: user.id, completed_date: completedDate },
+          { onConflict: 'task_id, completed_date' }
+        )
+    } else {
+      await supabaseClient
+        .from('task_completions')
+        .delete()
+        .eq('task_id', taskId)
+        .eq('completed_date', completedDate)
+    }
+    return
+  }
+
+  // Local storage completions
+  const completions = await loadCompletions(user)
+  let updated
+  if (isCompleted) {
+    const exists = completions.some(c => c.task_id === taskId && c.completed_date === completedDate)
+    if (!exists) {
+      completions.push({
+        id: 'comp-' + Date.now(),
+        task_id: taskId,
+        completed_date: completedDate,
+        created_at: new Date().toISOString()
+      })
+    }
+    updated = completions
+  } else {
+    updated = completions.filter(c => !(c.task_id === taskId && c.completed_date === completedDate))
+  }
+  localStorage.setItem(LOCAL_COMPLETIONS_KEY, JSON.stringify(updated))
+}
+
+// =================== TASKS TABLE ===================
 
 export async function loadTasks(user) {
   if (supabaseClient && user && !user.isDemo) {
     const { data, error } = await supabaseClient
       .from('tasks')
-      .select('*')
+      .select('*, subjects(*)')
       .order('position', { ascending: true })
 
     if (!error && data) {
       return data
     }
-    console.warn('Falling back to local tasks due to Supabase error:', error)
+    if (error) {
+      console.warn('Supabase tasks error:', error)
+    }
+    return []
   }
 
   // Local storage fallback
@@ -319,12 +434,15 @@ export async function saveTask(task, user) {
       title: task.title,
       description: task.description || '',
       subject: task.subject || 'General',
+      subject_id: task.subject_id || null,
+      priority: task.priority || 'medium',
       due_date: task.due_date,
       is_completed: !!task.is_completed,
       is_recurring: !!task.is_recurring,
       recurring_start_date: task.recurring_start_date || null,
       recurring_end_date: task.recurring_end_date || null,
       position: task.position ?? 0,
+      completed_at: task.is_completed ? (task.completed_at || new Date().toISOString()) : null,
       user_id: user.id
     }
 
@@ -333,7 +451,7 @@ export async function saveTask(task, user) {
         .from('tasks')
         .update(payload)
         .eq('id', task.id)
-        .select()
+        .select('*, subjects(*)')
         .single()
       if (error) throw error
       return data
@@ -341,7 +459,7 @@ export async function saveTask(task, user) {
       const { data, error } = await supabaseClient
         .from('tasks')
         .insert(payload)
-        .select()
+        .select('*, subjects(*)')
         .single()
       if (error) throw error
       return data
@@ -390,7 +508,6 @@ export async function deleteTask(taskId, user) {
 
 export async function updateTaskPositions(tasksList, user) {
   if (supabaseClient && user && !user.isDemo) {
-    // Upsert or sequential position updates
     for (let i = 0; i < tasksList.length; i++) {
       await supabaseClient
         .from('tasks')
@@ -400,7 +517,6 @@ export async function updateTaskPositions(tasksList, user) {
     return
   }
 
-  // Update in local tasks
   const tasks = await loadTasks(user)
   const taskMap = new Map(tasks.map(t => [t.id, t]))
   tasksList.forEach((t, index) => {

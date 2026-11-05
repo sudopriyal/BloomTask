@@ -39,25 +39,34 @@ const formattedDueDate = computed(() => {
 
 // Color chips for various study subjects in charming pink pastel shades
 const subjectStyle = computed(() => {
-  const sub = (props.task.subject || 'General').toLowerCase()
-  switch (sub) {
-    case 'math':
-      return 'bg-pink-100 text-pink-800 dark:bg-pink-950/80 dark:text-pink-300 border-pink-300 dark:border-pink-800'
-    case 'biology':
-    case 'science':
-      return 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-300 dark:border-rose-800'
-    case 'chemistry':
-      return 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-950/80 dark:text-fuchsia-300 border-fuchsia-300 dark:border-fuchsia-800'
-    case 'literature':
-    case 'english':
-      return 'bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border-purple-300 dark:border-purple-800'
-    case 'history':
-      return 'bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-300 border-amber-300 dark:border-amber-800'
-    case 'personal':
-      return 'bg-bloom-200 text-bloom-900 dark:bg-bloom-900/80 dark:text-bloom-200 border-bloom-300 dark:border-bloom-700'
-    default:
-      return 'bg-bloom-100 text-bloom-800 dark:bg-bloom-950 dark:text-bloom-300 border-bloom-200 dark:border-bloom-800'
+  const theme = props.task.subjects?.color_theme || ''
+  if (theme === 'rose') return 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+  if (theme === 'fuchsia') return 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-950/80 dark:text-fuchsia-300 border-fuchsia-300 dark:border-fuchsia-800'
+  if (theme === 'purple') return 'bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border-purple-300 dark:border-purple-800'
+  if (theme === 'plum') return 'bg-bloom-plum/20 text-bloom-900 dark:bg-bloom-plum/80 dark:text-bloom-200 border-bloom-300 dark:border-bloom-700'
+  if (theme === 'champagne') return 'bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+  if (theme === 'pink') return 'bg-pink-100 text-pink-800 dark:bg-pink-950/80 dark:text-pink-300 border-pink-300 dark:border-pink-800'
+
+  return 'bg-bloom-100 text-bloom-800 dark:bg-bloom-950 dark:text-bloom-300 border-bloom-200 dark:border-bloom-800'
+})
+
+const priorityBadge = computed(() => {
+  const p = props.task.priority || 'medium'
+  if (p === 'high') {
+    return {
+      label: 'High Priority',
+      icon: '🔥',
+      classes: 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+    }
   }
+  if (p === 'low') {
+    return {
+      label: 'Low',
+      icon: '🌱',
+      classes: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+    }
+  }
+  return null
 })
 </script>
 
@@ -99,12 +108,13 @@ const subjectStyle = computed(() => {
       <div class="flex-grow min-w-0">
         <!-- Title and Badges Row -->
         <div class="flex flex-wrap items-center gap-2 mb-1">
-          <!-- Subject Tag -->
+          <!-- Subject Tag (Optional) -->
           <span
+            v-if="task.subject && task.subject !== 'General'"
             class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full border shadow-2xs font-soft"
             :class="subjectStyle"
           >
-            {{ task.subject || 'General' }}
+            {{ task.subject }}
           </span>
 
           <!-- Countdown Badge -->
@@ -113,6 +123,16 @@ const subjectStyle = computed(() => {
             :class="countdown.classes"
           >
             {{ countdown.label }}
+          </span>
+
+          <!-- Priority Indicator -->
+          <span
+            v-if="priorityBadge"
+            class="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full font-soft"
+            :class="priorityBadge.classes"
+          >
+            <span>{{ priorityBadge.icon }}</span>
+            <span>{{ priorityBadge.label }}</span>
           </span>
 
           <!-- Recurring Daily Indicator -->

@@ -7,7 +7,10 @@ import {
   Move,
   Plus,
   Filter,
-  Search
+  Search,
+  LayoutGrid,
+  List,
+  FolderOpen
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -18,6 +21,10 @@ const props = defineProps({
   sortBy: {
     type: String,
     default: 'dueDate' // 'dueDate', 'custom'
+  },
+  layoutMode: {
+    type: String,
+    default: 'list' // 'list', 'grouped'
   },
   selectedSubject: {
     type: String,
@@ -40,15 +47,17 @@ const props = defineProps({
 const emit = defineEmits([
   'update:currentView',
   'update:sortBy',
+  'update:layoutMode',
   'update:selectedSubject',
   'update:searchQuery',
-  'open-new-task'
+  'open-new-task',
+  'open-subjects-modal'
 ])
 </script>
 
 <template>
   <div class="mb-5 space-y-3">
-    <!-- Row 1: Focus Window Tabs & Action Button -->
+    <!-- Row 1: Focus Window Tabs, Layout Switch & Add Task -->
     <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
       <!-- Focus Window Segmented Tabs -->
       <div class="flex items-center p-1 rounded-2xl bg-white/80 dark:bg-bloom-cardNight/90 border border-bloom-200 dark:border-bloom-borderNight shadow-sm overflow-x-auto scrollbar-none font-soft">
@@ -94,18 +103,32 @@ const emit = defineEmits([
         </button>
       </div>
 
-      <!-- Add New Task Button -->
-      <button
-        type="button"
-        @click="emit('open-new-task')"
-        class="flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-bloom-500 via-bloom-600 to-bloom-700 text-white font-semibold text-xs sm:text-sm shadow-pink-glow hover:shadow-plum-glow hover:opacity-95 active:scale-95 transition-all duration-300 font-soft"
-      >
-        <Plus class="w-4 h-4 stroke-[2.5]" />
-        <span>Add Study Task</span>
-      </button>
+      <!-- Action Buttons Row -->
+      <div class="flex items-center gap-2">
+        <!-- Manage Topics Button -->
+        <button
+          type="button"
+          @click="emit('open-subjects-modal')"
+          class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-white/80 dark:bg-bloom-cardNight border border-bloom-200 dark:border-bloom-borderNight text-bloom-800 dark:text-bloom-200 hover:bg-bloom-100 dark:hover:bg-bloom-plum/50 font-semibold text-xs sm:text-sm transition-all shadow-sm font-soft"
+          title="Define and manage your subjects & topics"
+        >
+          <FolderOpen class="w-4 h-4 text-bloom-500" />
+          <span>Topics</span>
+        </button>
+
+        <!-- Add New Task Button -->
+        <button
+          type="button"
+          @click="emit('open-new-task')"
+          class="flex-grow sm:flex-grow-0 flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-bloom-500 via-bloom-600 to-bloom-700 text-white font-semibold text-xs sm:text-sm shadow-pink-glow hover:shadow-plum-glow hover:opacity-95 active:scale-95 transition-all duration-300 font-soft"
+        >
+          <Plus class="w-4 h-4 stroke-[2.5]" />
+          <span>Add Study Task</span>
+        </button>
+      </div>
     </div>
 
-    <!-- Row 2: Search, Sorting Toggle & Subject Filters -->
+    <!-- Row 2: Search, Layout Grouping & Sorting Controls -->
     <div class="flex flex-wrap items-center justify-between gap-2.5 text-xs">
       <!-- Search Input -->
       <div class="relative flex-grow sm:flex-grow-0 sm:w-56">
@@ -114,50 +137,92 @@ const emit = defineEmits([
           type="text"
           :value="searchQuery"
           @input="emit('update:searchQuery', $event.target.value)"
-          placeholder="Search subjects or tasks..."
+          placeholder="Search topics or tasks..."
           class="w-full pl-8 pr-3 py-1.5 rounded-xl bg-white/70 dark:bg-bloom-cardNight border border-bloom-200 dark:border-bloom-borderNight text-bloom-900 dark:text-bloom-100 placeholder-bloom-400 dark:placeholder-bloom-600 focus:outline-none focus:ring-2 focus:ring-bloom-400 font-sans text-xs"
         />
       </div>
 
-      <!-- Sorting Selector -->
-      <div class="flex items-center gap-1.5 bg-white/80 dark:bg-bloom-cardNight p-1 rounded-xl border border-bloom-200 dark:border-bloom-borderNight font-soft">
-        <button
-          type="button"
-          @click="emit('update:sortBy', 'dueDate')"
-          class="flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all duration-200 font-medium"
-          :class="[
-            sortBy === 'dueDate'
-              ? 'bg-bloom-100 dark:bg-bloom-plum text-bloom-800 dark:text-bloom-200 font-semibold'
-              : 'text-bloom-600 dark:text-bloom-400 hover:text-bloom-800'
-          ]"
-          title="Auto-order tasks by fewest remaining days"
-        >
-          <ArrowUpDown class="w-3.5 h-3.5" />
-          <span>Fewest Days</span>
-        </button>
+      <!-- Controls: Layout Mode & Sorting -->
+      <div class="flex items-center gap-2">
+        <!-- Layout Mode Toggle (List vs Grouped by Subject) -->
+        <div class="flex items-center gap-1 bg-white/80 dark:bg-bloom-cardNight p-1 rounded-xl border border-bloom-200 dark:border-bloom-borderNight font-soft">
+          <button
+            type="button"
+            @click="emit('update:layoutMode', 'list')"
+            class="flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all duration-200 font-medium"
+            :class="[
+              layoutMode === 'list'
+                ? 'bg-bloom-500 text-white shadow-2xs font-semibold'
+                : 'text-bloom-600 dark:text-bloom-400 hover:text-bloom-800'
+            ]"
+            title="Single list sorted chronologically"
+          >
+            <List class="w-3.5 h-3.5" />
+            <span>List</span>
+          </button>
 
-        <button
-          type="button"
-          @click="emit('update:sortBy', 'custom')"
-          class="flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all duration-200 font-medium"
-          :class="[
-            sortBy === 'custom'
-              ? 'bg-bloom-100 dark:bg-bloom-plum text-bloom-800 dark:text-bloom-200 font-semibold'
-              : 'text-bloom-600 dark:text-bloom-400 hover:text-bloom-800'
-          ]"
-          title="Reorder manually with drag and drop"
+          <button
+            type="button"
+            @click="emit('update:layoutMode', 'grouped')"
+            class="flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all duration-200 font-medium"
+            :class="[
+              layoutMode === 'grouped'
+                ? 'bg-bloom-500 text-white shadow-2xs font-semibold'
+                : 'text-bloom-600 dark:text-bloom-400 hover:text-bloom-800'
+            ]"
+            title="Organize tasks sorted under subject headings"
+          >
+            <LayoutGrid class="w-3.5 h-3.5" />
+            <span>By Subject</span>
+          </button>
+        </div>
+
+        <!-- Sorting Selector (When in list mode) -->
+        <div
+          v-if="layoutMode === 'list'"
+          class="flex items-center gap-1 bg-white/80 dark:bg-bloom-cardNight p-1 rounded-xl border border-bloom-200 dark:border-bloom-borderNight font-soft"
         >
-          <Move class="w-3.5 h-3.5" />
-          <span>Manual Drag</span>
-        </button>
+          <button
+            type="button"
+            @click="emit('update:sortBy', 'dueDate')"
+            class="flex items-center gap-1 px-2 py-1 rounded-lg transition-all duration-200 font-medium"
+            :class="[
+              sortBy === 'dueDate'
+                ? 'bg-bloom-100 dark:bg-bloom-plum text-bloom-800 dark:text-bloom-200 font-semibold'
+                : 'text-bloom-600 dark:text-bloom-400 hover:text-bloom-800'
+            ]"
+            title="Auto-order tasks by fewest remaining days"
+          >
+            <ArrowUpDown class="w-3.5 h-3.5" />
+            <span>Fewest Days</span>
+          </button>
+
+          <button
+            type="button"
+            @click="emit('update:sortBy', 'custom')"
+            class="flex items-center gap-1 px-2 py-1 rounded-lg transition-all duration-200 font-medium"
+            :class="[
+              sortBy === 'custom'
+                ? 'bg-bloom-100 dark:bg-bloom-plum text-bloom-800 dark:text-bloom-200 font-semibold'
+                : 'text-bloom-600 dark:text-bloom-400 hover:text-bloom-800'
+            ]"
+            title="Reorder manually with drag and drop"
+          >
+            <Move class="w-3.5 h-3.5" />
+            <span>Drag</span>
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Row 3: Subject Badges Filter -->
-    <div class="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 scrollbar-none font-soft">
+    <!-- Row 3: Subject Filter Chips (Only show if user has created subjects) -->
+    <div
+      v-if="availableSubjects.length > 1"
+      class="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 scrollbar-none font-soft"
+    >
       <span class="text-[11px] text-bloom-500 dark:text-bloom-400 font-medium flex items-center gap-1 flex-shrink-0">
         <Filter class="w-3 h-3" />
-        Subject:
+        Filter:
       </span>
 
       <button

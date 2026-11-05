@@ -2,6 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===================================================
+   Custom Bubblegum Pink Cursor & Pointer
+   =================================================== */
+html,
+body {
+  cursor: url('/cursor.png') 6 2, auto;
+}
+
+/* Interactive elements use the pointing finger */
+a,
+button,
+[role="button"],
+input[type="submit"],
+input[type="button"],
+input[type="checkbox"],
+select,
+summary,
+.cursor-pointer,
+.drag-handle {
+  cursor: url('/pointer.png') 14 2, pointer !important;
+}
+
+/* Text inputs use standard text selection cursor */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
+textarea {
+  cursor: text;
+}
+
 /* Custom Scrollbar in Bloom Pink */
 ::-webkit-scrollbar {
   width: 8px;

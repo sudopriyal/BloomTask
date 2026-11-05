@@ -1,14 +1,10 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import draggable from 'vuedraggable'
 import confetti from 'canvas-confetti'
 import {
   Sparkles,
-  Plus,
-  BookOpen,
-  Calendar,
-  Layers,
-  Inbox
+  Plus
 } from 'lucide-vue-next'
 
 import BloomHeader from './components/BloomHeader.vue'
@@ -17,11 +13,11 @@ import TaskControls from './components/TaskControls.vue'
 import CompletedSection from './components/CompletedSection.vue'
 import TaskModal from './components/TaskModal.vue'
 import AuthModal from './components/AuthModal.vue'
+import SubjectManagerModal from './components/SubjectManagerModal.vue'
 
 import {
   getTodayString,
   addDays,
-  isWithinNext7Days,
   getDaysDifference
 } from './utils/dateUtils'
 
@@ -30,6 +26,13 @@ import {
   isSupabaseConnected,
   getCurrentUser,
   onAuthStateChange,
+  loadProfile,
+  updateProfile,
+  loadSubjects,
+  createSubject,
+  deleteSubject,
+  loadCompletions,
+  setTaskCompletionDate,
   loadTasks,
   saveTask,
   deleteTask,
@@ -50,22 +53,31 @@ function applyTheme(dark) {
   }
 }
 
-function toggleTheme() {
-  applyTheme(!isDark.value)
+async function toggleTheme() {
+  const newTheme = !isDark.value
+  applyTheme(newTheme)
+  if (currentUser.value) {
+    await updateProfile({ theme_preference: newTheme ? 'dark' : 'light' }, currentUser.value)
+  }
 }
 
-// =================== AUTH STATE ===================
+// =================== AUTH & PROFILE STATE ===================
 const currentUser = ref(null)
+const userProfile = ref(null)
 const isConnected = ref(false)
 const showAuthModal = ref(false)
+const showSubjectsModal = ref(false)
 
-// =================== TASK STATE ===================
+// =================== DATA STATE (MULTI-TABLE) ===================
 const rawTasks = ref([])
+const dbSubjects = ref([])
+const dbCompletions = ref([])
 const isLoading = ref(true)
 
 // Controls & Filter state
 const currentView = ref('next7') // 'next7', 'today', 'all'
 const sortBy = ref('dueDate') // 'dueDate', 'custom'
+const layoutMode = ref('list') // 'list', 'grouped'
 const selectedSubject = ref('All')
 const searchQuery = ref('')
 
@@ -75,12 +87,15 @@ const taskToEdit = ref(null)
 
 // =================== LIFECYCLE ===================
 onMounted(async () => {
-  // 1. Initialize Theme
-  const savedTheme = localStorage.getItem('bloom_theme')
-  const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-  applyTheme(savedTheme ? savedTheme === 'dark' : false) // default light pink
+  // 1. Purge any stale mock demo items and default subjects
+  localStorage.removeItem('bloom_task_local_items')
+  localStorage.removeItem('bloom_task_local_subjects')
 
-  // 2. Initialize Supabase Auth listener
+  // 2. Initialize Theme from local cache
+  const savedTheme = localStorage.getItem('bloom_theme')
+  applyTheme(savedTheme ? savedTheme === 'dark' : false)
+
+  // 3. Initialize Supabase Auth listener
   initSupabase()
   isConnected.value = isSupabaseConnected()
 
@@ -92,28 +107,44 @@ onMounted(async () => {
 
   onAuthStateChange((user) => {
     currentUser.value = user
-    fetchTasks()
+    refreshAllData()
   })
 
-  // 3. Load Tasks
-  await fetchTasks()
+  // 4. Load All Data (Profiles, Subjects, Completions, Tasks)
+  await refreshAllData()
 })
 
-async function fetchTasks() {
+async function refreshAllData() {
   isLoading.value = true
   try {
-    rawTasks.value = await loadTasks(currentUser.value)
+    const [profile, subjects, completions, tasks] = await Promise.all([
+      loadProfile(currentUser.value),
+      loadSubjects(currentUser.value),
+      loadCompletions(currentUser.value),
+      loadTasks(currentUser.value)
+    ])
+
+    userProfile.value = profile
+    if (profile?.theme_preference) {
+      applyTheme(profile.theme_preference === 'dark')
+    }
+
+    // Load only real database topics (ignore legacy mock sub- IDs)
+    dbSubjects.value = (subjects || []).filter((s) => !s.id?.startsWith('sub-'))
+    dbCompletions.value = completions || []
+    rawTasks.value = (tasks || []).filter((t) => !t.id?.startsWith('demo-'))
   } catch (e) {
-    console.error('Failed to load tasks', e)
+    console.error('Failed to load multi-table database records', e)
   } finally {
     isLoading.value = false
   }
 }
 
-// =================== RECURRING TASK EXPANSION ===================
+// =================== RECURRING TASK EXPANSION (ATOMIC DB COMPLETIONS) ===================
 /**
  * Expands recurring tasks into day-specific virtual task instances
  * for active dates within the 7-day window.
+ * Completed status is read atomically from the `task_completions` database table.
  */
 const expandedTasks = computed(() => {
   const todayStr = getTodayString()
@@ -121,21 +152,19 @@ const expandedTasks = computed(() => {
 
   rawTasks.value.forEach((task) => {
     if (!task.is_recurring) {
-      // Normal single task
       result.push({ ...task, instanceId: task.id })
       return
     }
 
-    // Daily Recurring Task:
     const startStr = task.recurring_start_date || task.due_date || todayStr
     const endStr = task.recurring_end_date || addDays(todayStr, 7)
-    const completedDates = task.completed_recurring_dates || []
 
-    // Expand for today through the next 7 days that fall within [start, end]
     for (let offset = 0; offset <= 7; offset++) {
       const dateForDay = addDays(todayStr, offset)
       if (dateForDay >= startStr && dateForDay <= endStr) {
-        const isDoneForDay = completedDates.includes(dateForDay)
+        const isDoneForDay = dbCompletions.value.some(
+          (c) => c.task_id === task.id && c.completed_date === dateForDay
+        )
         result.push({
           ...task,
           instanceId: `${task.id}_${dateForDay}`,
@@ -159,7 +188,6 @@ const filteredTasks = computed(() => {
     if (currentView.value === 'today') {
       if (task.due_date !== todayStr) return false
     } else if (currentView.value === 'next7') {
-      // due today plus next 7 days (or overdue if not completed yet)
       const diff = getDaysDifference(task.due_date)
       const isDueTodayOrNext7 = diff >= 0 && diff <= 7
       const isOverdueAndIncomplete = diff < 0 && !task.is_completed
@@ -168,7 +196,8 @@ const filteredTasks = computed(() => {
 
     // 2. Subject Filtering
     if (selectedSubject.value !== 'All') {
-      if ((task.subject || 'General').toLowerCase() !== selectedSubject.value.toLowerCase()) {
+      const taskSub = task.subject || 'General'
+      if (taskSub.toLowerCase() !== selectedSubject.value.toLowerCase()) {
         return false
       }
     }
@@ -192,7 +221,6 @@ const activeTasks = computed({
     const list = filteredTasks.value.filter((t) => !t.is_completed)
 
     if (sortBy.value === 'dueDate') {
-      // Sort automatically by fewest remaining days
       return [...list].sort((a, b) => {
         const diffA = getDaysDifference(a.due_date)
         const diffB = getDaysDifference(b.due_date)
@@ -200,11 +228,9 @@ const activeTasks = computed({
       })
     }
 
-    // Sort by custom position
     return [...list].sort((a, b) => (a.position || 0) - (b.position || 0))
   },
   set(newOrder) {
-    // When manually dragged and reordered
     newOrder.forEach((task, index) => {
       task.position = index
       const realTask = rawTasks.value.find((t) => t.id === task.id)
@@ -214,15 +240,65 @@ const activeTasks = computed({
   }
 })
 
+// Grouped by Subject / Topic
+const groupedActiveTasks = computed(() => {
+  const groups = new Map()
+
+  // Defined subjects from user's table
+  dbSubjects.value.forEach((s) => {
+    groups.set(s.name, {
+      id: s.id,
+      name: s.name,
+      colorTheme: s.color_theme,
+      tasks: []
+    })
+  })
+
+  // Group for tasks with no subject defined
+  const noTopicGroup = {
+    id: 'no-topic',
+    name: 'General / No Subject',
+    colorTheme: 'plum',
+    tasks: []
+  }
+
+  activeTasks.value.forEach((task) => {
+    const subName = task.subject && task.subject !== 'General' ? task.subject : null
+    if (subName && groups.has(subName)) {
+      groups.get(subName).tasks.push(task)
+    } else if (subName) {
+      if (!groups.has(subName)) {
+        groups.set(subName, {
+          id: 'custom-' + subName,
+          name: subName,
+          colorTheme: 'rose',
+          tasks: []
+        })
+      }
+      groups.get(subName).tasks.push(task)
+    } else {
+      noTopicGroup.tasks.push(task)
+    }
+  })
+
+  // Filter out empty groups so only relevant subject headings show
+  const list = Array.from(groups.values()).filter((g) => g.tasks.length > 0)
+  if (noTopicGroup.tasks.length > 0) {
+    list.push(noTopicGroup)
+  }
+  return list
+})
+
 const completedTasks = computed(() => {
   return filteredTasks.value.filter((t) => t.is_completed)
 })
 
-// Available subjects for filtering
+// Available subjects for filtering from the user's subjects table
 const availableSubjects = computed(() => {
   const set = new Set(['All'])
+  dbSubjects.value.forEach((s) => set.add(s.name))
   rawTasks.value.forEach((t) => {
-    if (t.subject) set.add(t.subject)
+    if (t.subject && t.subject !== 'General') set.add(t.subject)
   })
   return Array.from(set)
 })
@@ -241,9 +317,9 @@ async function handleToggleComplete(task) {
   const willBeCompleted = !task.is_completed
 
   if (willBeCompleted) {
-    // Trigger celebratory pink confetti!
+    // Trigger celebratory pink floral confetti!
     confetti({
-      particleCount: 40,
+      particleCount: 45,
       spread: 60,
       origin: { y: 0.75 },
       colors: ['#F472B6', '#EC4899', '#DB2777', '#FBCFE8', '#FFF1F6']
@@ -251,23 +327,21 @@ async function handleToggleComplete(task) {
   }
 
   if (task.is_instance) {
-    // Recurring instance: update completed_recurring_dates array on master task
-    const master = rawTasks.value.find((t) => t.id === task.id)
-    if (master) {
-      const dates = new Set(master.completed_recurring_dates || [])
-      if (willBeCompleted) {
-        dates.add(task.due_date)
-      } else {
-        dates.delete(task.due_date)
-      }
-      master.completed_recurring_dates = Array.from(dates)
-      await saveTask(master, currentUser.value)
+    // Atomic completion record in task_completions table:
+    await setTaskCompletionDate(task.id, task.due_date, willBeCompleted, currentUser.value)
+    if (willBeCompleted) {
+      dbCompletions.value.push({ task_id: task.id, completed_date: task.due_date })
+    } else {
+      dbCompletions.value = dbCompletions.value.filter(
+        (c) => !(c.task_id === task.id && c.completed_date === task.due_date)
+      )
     }
   } else {
-    // Normal task
+    // Standard task completion in tasks table
     const realTask = rawTasks.value.find((t) => t.id === task.id)
     if (realTask) {
       realTask.is_completed = willBeCompleted
+      realTask.completed_at = willBeCompleted ? new Date().toISOString() : null
       await saveTask(realTask, currentUser.value)
     }
   }
@@ -275,6 +349,14 @@ async function handleToggleComplete(task) {
 
 function handleOpenNewTask() {
   taskToEdit.value = null
+  showTaskModal.value = true
+}
+
+function openTaskModalForSubject(subName, subId) {
+  taskToEdit.value = {
+    subject: subName.includes('No Subject') ? '' : subName,
+    subject_id: subId.startsWith('custom-') || subId === 'no-topic' ? null : subId
+  }
   showTaskModal.value = true
 }
 
@@ -304,6 +386,7 @@ async function handleDeleteTask(taskId) {
   try {
     await deleteTask(taskId, currentUser.value)
     rawTasks.value = rawTasks.value.filter((t) => t.id !== taskId)
+    dbCompletions.value = dbCompletions.value.filter((c) => c.task_id !== taskId)
   } catch (err) {
     console.error('Failed to delete task', err)
     alert('Failed to delete task: ' + err.message)
@@ -321,15 +404,31 @@ async function handleClearAllCompleted() {
     await deleteTask(id, currentUser.value)
   }
 
-  // Clear recurring instances
-  rawTasks.value.forEach((t) => {
-    if (t.is_recurring) {
-      t.completed_recurring_dates = []
-      saveTask(t, currentUser.value)
-    }
-  })
+  for (const inst of completedTasks.value.filter((t) => t.is_instance)) {
+    await setTaskCompletionDate(inst.id, inst.due_date, false, currentUser.value)
+  }
 
+  dbCompletions.value = []
   rawTasks.value = rawTasks.value.filter((t) => !toRemoveIds.includes(t.id))
+}
+
+async function handleCreateSubject(subjectData) {
+  try {
+    const created = await createSubject(subjectData, currentUser.value)
+    dbSubjects.value.push(created)
+  } catch (err) {
+    console.error('Failed to create subject in database', err)
+  }
+}
+
+async function handleDeleteSubject(subjectId) {
+  if (!confirm('Are you sure you want to delete this topic? Tasks under this topic will remain intact.')) return
+  try {
+    await deleteSubject(subjectId, currentUser.value)
+    dbSubjects.value = dbSubjects.value.filter((s) => s.id !== subjectId)
+  } catch (err) {
+    console.error('Failed to delete subject', err)
+  }
 }
 
 function handleDragEnd() {
@@ -338,10 +437,37 @@ function handleDragEnd() {
   }
 }
 
+// Quick Add Bar
+const quickTaskTitle = ref('')
+
+async function handleQuickAddTask() {
+  if (!quickTaskTitle.value.trim()) return
+  const title = quickTaskTitle.value.trim()
+  quickTaskTitle.value = ''
+  await handleSaveTask({
+    title,
+    due_date: getTodayString(),
+    priority: 'medium',
+    subject: selectedSubject.value !== 'All' ? selectedSubject.value : null
+  })
+}
+
+async function handleLoadStarterTemplates() {
+  const today = getTodayString()
+  const starters = [
+    { title: '📖 Review today’s lecture notes', due_date: today, priority: 'medium', subject: null },
+    { title: '✨ Daily problem set / flashcard drill', due_date: today, priority: 'high', is_recurring: true, recurring_start_date: today, recurring_end_date: addDays(today, 6), subject: null },
+    { title: '🎀 Organize study materials & weekly goals', due_date: addDays(today, 2), priority: 'low', subject: null }
+  ]
+  for (const item of starters) {
+    await handleSaveTask(item)
+  }
+}
+
 function handleAuthSuccess(user) {
   currentUser.value = user
   isConnected.value = isSupabaseConnected()
-  fetchTasks()
+  refreshAllData()
 }
 </script>
 
@@ -360,15 +486,17 @@ function handleAuthSuccess(user) {
 
     <!-- Main Content Container -->
     <main class="max-w-4xl mx-auto px-4 sm:px-6">
-      <!-- Controls Bar: Focus Window Tabs, Search, Sorting & Add Task -->
+      <!-- Controls Bar: Focus Window Tabs, Layout Switch (List vs By Subject), Search & Add Task -->
       <TaskControls
         v-model:current-view="currentView"
         v-model:sort-by="sortBy"
+        v-model:layout-mode="layoutMode"
         v-model:selected-subject="selectedSubject"
         v-model:search-query="searchQuery"
         :available-subjects="availableSubjects"
         :active-count="activeTasks.length"
         @open-new-task="handleOpenNewTask"
+        @open-subjects-modal="showSubjectsModal = true"
       />
 
       <!-- Loading State -->
@@ -383,6 +511,27 @@ function handleAuthSuccess(user) {
 
       <!-- Active Tasks Section -->
       <div v-else>
+        <!-- Quick Add Input Bar -->
+        <div class="mb-4 p-2 rounded-2xl bg-white/80 dark:bg-bloom-cardNight border border-bloom-200 dark:border-bloom-borderNight shadow-sm flex items-center gap-2">
+          <span class="pl-2 text-base">🌸</span>
+          <input
+            v-model="quickTaskTitle"
+            @keydown.enter.prevent="handleQuickAddTask"
+            type="text"
+            placeholder="Quick add a study task for today... (Press Enter)"
+            class="flex-1 bg-transparent border-none text-xs sm:text-sm text-bloom-900 dark:text-bloom-100 placeholder-bloom-400 dark:placeholder-bloom-500 focus:outline-none font-sans"
+          />
+          <button
+            type="button"
+            @click="handleQuickAddTask"
+            :disabled="!quickTaskTitle.trim()"
+            class="px-3.5 py-1.5 rounded-xl bg-bloom-500 hover:bg-bloom-600 disabled:opacity-40 text-white text-xs font-semibold font-soft transition-all shadow-2xs flex items-center gap-1 active:scale-95"
+          >
+            <Plus class="w-3.5 h-3.5" />
+            <span>Add</span>
+          </button>
+        </div>
+
         <!-- Empty State -->
         <div
           v-if="activeTasks.length === 0"
@@ -392,21 +541,80 @@ function handleAuthSuccess(user) {
             🌸
           </div>
           <h3 class="text-base font-bold text-bloom-900 dark:text-bloom-100 font-display">
-            No active study tasks in this view
+            Your study dashboard is ready!
           </h3>
           <p class="text-xs text-bloom-600 dark:text-bloom-400 mt-1 max-w-sm mx-auto font-soft">
-            You're all caught up! Plant a new task or adjust your subject and date filters.
+            You have a fresh, clean slate. Plant a task above or define your topics to get started.
           </p>
-          <button
-            @click="handleOpenNewTask"
-            class="mt-4 px-4 py-2 rounded-xl bg-gradient-to-r from-bloom-500 to-bloom-600 text-white text-xs font-bold shadow-pink-glow hover:opacity-90 transition-all font-soft inline-flex items-center gap-1.5"
-          >
-            <Plus class="w-3.5 h-3.5" />
-            <span>Add Study Task</span>
-          </button>
+          <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <button
+              @click="handleOpenNewTask"
+              class="px-4 py-2 rounded-xl bg-gradient-to-r from-bloom-500 to-bloom-600 text-white text-xs font-bold shadow-pink-glow hover:opacity-90 transition-all font-soft inline-flex items-center gap-1.5"
+            >
+              <Plus class="w-3.5 h-3.5" />
+              <span>Plant a Task</span>
+            </button>
+            <button
+              @click="showSubjectsModal = true"
+              class="px-4 py-2 rounded-xl border border-bloom-300 dark:border-bloom-borderNight text-bloom-800 dark:text-bloom-200 text-xs font-semibold hover:bg-bloom-100 font-soft transition-all"
+            >
+              Define Topics
+            </button>
+            <button
+              @click="handleLoadStarterTemplates"
+              class="px-4 py-2 rounded-xl bg-bloom-100 hover:bg-bloom-200 dark:bg-bloom-plum/50 text-bloom-800 dark:text-bloom-200 text-xs font-semibold font-soft transition-all"
+            >
+              🌱 Add 3 Starter Tasks
+            </button>
+          </div>
         </div>
 
-        <!-- Draggable Tasks List -->
+        <!-- Mode 1: Grouped by Subject / Topic Headings -->
+        <div v-else-if="layoutMode === 'grouped'" class="space-y-6">
+          <div
+            v-for="group in groupedActiveTasks"
+            :key="group.id"
+            class="p-4 sm:p-5 rounded-3xl bg-white/75 dark:bg-bloom-cardNight/80 border border-bloom-200/80 dark:border-bloom-borderNight shadow-petal transition-all"
+          >
+            <!-- Topic Heading -->
+            <div class="flex items-center justify-between pb-3 mb-3 border-b border-bloom-100 dark:border-bloom-borderNight">
+              <div class="flex items-center gap-2">
+                <span class="text-lg">🌸</span>
+                <h3 class="font-display font-bold text-base sm:text-lg text-bloom-900 dark:text-bloom-100 tracking-wide">
+                  {{ group.name }}
+                </h3>
+                <span class="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-bloom-100 text-bloom-800 dark:bg-bloom-plum dark:text-bloom-300 font-soft">
+                  {{ group.tasks.length }} {{ group.tasks.length === 1 ? 'task' : 'tasks' }}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                @click="openTaskModalForSubject(group.name, group.id)"
+                class="px-3 py-1 rounded-xl bg-bloom-100 hover:bg-bloom-200 dark:bg-bloom-plum/60 dark:hover:bg-bloom-plum text-bloom-800 dark:text-bloom-200 text-xs font-semibold font-soft flex items-center gap-1 transition-colors"
+                title="Add a task to this topic"
+              >
+                <Plus class="w-3.5 h-3.5" />
+                <span>Add Task</span>
+              </button>
+            </div>
+
+            <!-- Tasks under this Topic -->
+            <div class="space-y-2.5">
+              <TaskCard
+                v-for="task in group.tasks"
+                :key="task.instanceId || task.id"
+                :task="task"
+                :is-drag-enabled="false"
+                @toggle-complete="handleToggleComplete"
+                @edit-task="handleEditTask"
+                @delete-task="handleDeleteTask"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Mode 2: Flat List (Chronological or Drag & Drop) -->
         <draggable
           v-else
           v-model="activeTasks"
@@ -444,8 +652,18 @@ function handleAuthSuccess(user) {
     <TaskModal
       :is-open="showTaskModal"
       :task-to-edit="taskToEdit"
+      :subjects-list="dbSubjects"
       @close="showTaskModal = false"
       @save="handleSaveTask"
+      @create-subject="handleCreateSubject"
+    />
+
+    <SubjectManagerModal
+      :is-open="showSubjectsModal"
+      :subjects="dbSubjects"
+      @close="showSubjectsModal = false"
+      @create-subject="handleCreateSubject"
+      @delete-subject="handleDeleteSubject"
     />
 
     <AuthModal

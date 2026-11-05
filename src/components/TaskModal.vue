@@ -1,6 +1,15 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
-import { X, Sparkles, Calendar, BookOpen, Repeat, AlertCircle } from 'lucide-vue-next'
+import {
+  X,
+  Sparkles,
+  Calendar,
+  BookOpen,
+  Repeat,
+  AlertCircle,
+  Flag,
+  Plus
+} from 'lucide-vue-next'
 import { getTodayString, addDays } from '../utils/dateUtils'
 
 const props = defineProps({
@@ -11,49 +20,46 @@ const props = defineProps({
   taskToEdit: {
     type: Object,
     default: null
+  },
+  subjectsList: {
+    type: Array,
+    default: () => []
   }
 })
 
-const emit = defineEmits(['close', 'save'])
+const emit = defineEmits(['close', 'save', 'create-subject'])
 
 const title = ref('')
 const description = ref('')
-const subject = ref('Biology')
-const customSubject = ref('')
+const subject = ref('')
+const subjectId = ref(null)
+const priority = ref('medium') // 'low', 'medium', 'high'
 const dueDate = ref(getTodayString())
 const isRecurring = ref(false)
 const recurringStartDate = ref(getTodayString())
 const recurringEndDate = ref(addDays(getTodayString(), 7))
 const errorMessage = ref('')
 
-const presetSubjects = [
-  'Biology',
-  'Math',
-  'Chemistry',
-  'Literature',
-  'History',
-  'Languages',
-  'Coding',
-  'Personal',
-  '+ Custom'
-]
+// In-modal quick new subject creation
+const showAddSubject = ref(false)
+const newSubjectName = ref('')
+const newSubjectTheme = ref('rose')
+
+const availableSubjectItems = computed(() => {
+  return props.subjectsList || []
+})
 
 const isEditing = computed(() => !!props.taskToEdit)
 
-// Synchronize inputs when modal opens or taskToEdit changes
 watch(
   () => props.taskToEdit,
   (newTask) => {
     if (newTask) {
       title.value = newTask.title || ''
       description.value = newTask.description || ''
-      if (presetSubjects.includes(newTask.subject)) {
-        subject.value = newTask.subject
-        customSubject.value = ''
-      } else {
-        subject.value = '+ Custom'
-        customSubject.value = newTask.subject || ''
-      }
+      subject.value = newTask.subject || ''
+      subjectId.value = newTask.subject_id || null
+      priority.value = newTask.priority || 'medium'
       dueDate.value = newTask.due_date || getTodayString()
       isRecurring.value = !!newTask.is_recurring
       recurringStartDate.value = newTask.recurring_start_date || getTodayString()
@@ -77,17 +83,37 @@ watch(
 function resetForm() {
   title.value = ''
   description.value = ''
-  subject.value = 'Biology'
-  customSubject.value = ''
+  subject.value = ''
+  subjectId.value = null
+  priority.value = 'medium'
   dueDate.value = getTodayString()
   isRecurring.value = false
   recurringStartDate.value = getTodayString()
   recurringEndDate.value = addDays(getTodayString(), 7)
   errorMessage.value = ''
+  showAddSubject.value = false
+  newSubjectName.value = ''
 }
 
-function handleSubjectSelect(sub) {
-  subject.value = sub
+function handleSubjectSelect(subItem) {
+  if (subItem) {
+    subject.value = subItem.name
+    subjectId.value = subItem.id || null
+  } else {
+    subject.value = ''
+    subjectId.value = null
+  }
+}
+
+function handleCreateSubjectSubmit() {
+  if (!newSubjectName.value.trim()) return
+  emit('create-subject', {
+    name: newSubjectName.value.trim(),
+    color_theme: newSubjectTheme.value
+  })
+  subject.value = newSubjectName.value.trim()
+  newSubjectName.value = ''
+  showAddSubject.value = false
 }
 
 function handleSubmit() {
@@ -95,10 +121,6 @@ function handleSubmit() {
     errorMessage.value = 'Please provide a task title.'
     return
   }
-
-  const finalSubject = subject.value === '+ Custom'
-    ? (customSubject.value.trim() || 'General')
-    : subject.value
 
   if (isRecurring.value && (!recurringStartDate.value || !recurringEndDate.value)) {
     errorMessage.value = 'Please provide both start and end dates for daily recurring tasks.'
@@ -114,7 +136,9 @@ function handleSubmit() {
     ...(props.taskToEdit || {}),
     title: title.value.trim(),
     description: description.value.trim(),
-    subject: finalSubject,
+    subject: subject.value ? subject.value.trim() : null,
+    subject_id: subjectId.value || null,
+    priority: priority.value,
     due_date: isRecurring.value ? recurringStartDate.value : dueDate.value,
     is_recurring: isRecurring.value,
     recurring_start_date: isRecurring.value ? recurringStartDate.value : null,
@@ -177,37 +201,135 @@ function handleSubmit() {
           />
         </div>
 
-        <!-- Subject Picker -->
+        <!-- Subject Picker & Creator -->
         <div>
-          <label class="block text-xs font-semibold text-bloom-800 dark:text-bloom-200 uppercase tracking-wider mb-1.5 font-soft flex items-center gap-1">
-            <BookOpen class="w-3.5 h-3.5 text-bloom-500" />
-            Subject / Category
-          </label>
-          <div class="flex flex-wrap gap-1.5">
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-xs font-semibold text-bloom-800 dark:text-bloom-200 uppercase tracking-wider font-soft flex items-center gap-1">
+              <BookOpen class="w-3.5 h-3.5 text-bloom-500" />
+              Subject / Topic <span class="text-[10px] text-bloom-500 font-normal lowercase">(optional)</span>
+            </label>
             <button
-              v-for="sub in presetSubjects"
-              :key="sub"
+              type="button"
+              @click="showAddSubject = !showAddSubject"
+              class="text-[11px] font-semibold text-bloom-600 dark:text-bloom-400 hover:underline flex items-center gap-1 font-soft"
+            >
+              <Plus class="w-3 h-3" />
+              <span>New Topic</span>
+            </button>
+          </div>
+
+          <!-- Quick Add Subject Input Row -->
+          <div v-if="showAddSubject" class="mb-2 p-2.5 rounded-xl bg-bloom-100/60 dark:bg-bloom-plum/40 border border-bloom-200 dark:border-bloom-borderNight flex flex-wrap items-center gap-2">
+            <input
+              v-model="newSubjectName"
+              type="text"
+              placeholder="e.g. Organic Chemistry, French..."
+              class="flex-1 px-3 py-1 text-xs rounded-lg bg-white dark:bg-bloom-cardNight border border-bloom-300 dark:border-bloom-borderNight text-bloom-900 dark:text-bloom-100 focus:outline-none"
+            />
+            <select
+              v-model="newSubjectTheme"
+              class="px-2 py-1 text-xs rounded-lg bg-white dark:bg-bloom-cardNight border border-bloom-300 dark:border-bloom-borderNight text-bloom-900 dark:text-bloom-100 font-soft"
+            >
+              <option value="rose">Rose Pink</option>
+              <option value="pink">Blush Pink</option>
+              <option value="fuchsia">Fuchsia</option>
+              <option value="plum">Plum</option>
+              <option value="purple">Lilac</option>
+              <option value="champagne">Peach</option>
+            </select>
+            <button
+              type="button"
+              @click="handleCreateSubjectSubmit"
+              class="px-3 py-1 rounded-lg bg-bloom-500 hover:bg-bloom-600 text-white text-xs font-bold font-soft"
+            >
+              Add
+            </button>
+          </div>
+
+          <!-- Subject Badges List (With None option) -->
+          <div class="flex flex-wrap gap-1.5 items-center">
+            <!-- None / No Subject Option -->
+            <button
+              type="button"
+              @click="handleSubjectSelect(null)"
+              class="text-xs font-medium px-3 py-1 rounded-full border transition-all duration-200 font-soft"
+              :class="[
+                !subject
+                  ? 'bg-bloom-500 text-white border-bloom-500 shadow-petal font-semibold'
+                  : 'bg-bloom-50/60 dark:bg-bloom-plum/30 text-bloom-700 dark:text-bloom-300 border-bloom-200 dark:border-bloom-borderNight hover:bg-bloom-100'
+              ]"
+            >
+              None
+            </button>
+
+            <!-- User Defined Subjects -->
+            <button
+              v-for="sub in availableSubjectItems"
+              :key="sub.id || sub.name"
               type="button"
               @click="handleSubjectSelect(sub)"
               class="text-xs font-medium px-3 py-1 rounded-full border transition-all duration-200 font-soft"
               :class="[
-                subject === sub
-                  ? 'bg-bloom-500 text-white border-bloom-500 shadow-petal'
+                subject === sub.name
+                  ? 'bg-bloom-500 text-white border-bloom-500 shadow-petal font-semibold'
                   : 'bg-bloom-50/60 dark:bg-bloom-plum/30 text-bloom-700 dark:text-bloom-300 border-bloom-200 dark:border-bloom-borderNight hover:bg-bloom-100'
               ]"
             >
-              {{ sub }}
+              {{ sub.name }}
             </button>
-          </div>
 
-          <!-- Custom Subject Input if selected -->
-          <div v-if="subject === '+ Custom'" class="mt-2">
-            <input
-              v-model="customSubject"
-              type="text"
-              placeholder="Enter custom subject name..."
-              class="w-full px-3 py-1.5 rounded-lg bg-bloom-50 dark:bg-bloom-plum/30 border border-bloom-200 dark:border-bloom-borderNight text-bloom-900 dark:text-bloom-100 text-xs focus:ring-2 focus:ring-bloom-400 focus:outline-none"
-            />
+            <span v-if="availableSubjectItems.length === 0" class="text-[11px] text-bloom-500 dark:text-bloom-400 italic">
+              (No custom topics yet — click "+ New Topic" to add one)
+            </span>
+          </div>
+        </div>
+
+        <!-- Priority Selector -->
+        <div>
+          <label class="block text-xs font-semibold text-bloom-800 dark:text-bloom-200 uppercase tracking-wider mb-1.5 font-soft flex items-center gap-1">
+            <Flag class="w-3.5 h-3.5 text-bloom-500" />
+            Priority Level
+          </label>
+          <div class="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              @click="priority = 'low'"
+              class="py-1.5 px-3 rounded-xl border text-xs font-semibold font-soft flex items-center justify-center gap-1.5 transition-all"
+              :class="[
+                priority === 'low'
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-400 dark:border-emerald-700 shadow-2xs font-bold'
+                  : 'bg-white/60 dark:bg-bloom-plum/30 text-bloom-700 dark:text-bloom-300 border-bloom-200 dark:border-bloom-borderNight'
+              ]"
+            >
+              <span>🌱</span>
+              <span>Low</span>
+            </button>
+            <button
+              type="button"
+              @click="priority = 'medium'"
+              class="py-1.5 px-3 rounded-xl border text-xs font-semibold font-soft flex items-center justify-center gap-1.5 transition-all"
+              :class="[
+                priority === 'medium'
+                  ? 'bg-bloom-200 text-bloom-900 dark:bg-bloom-plum/90 dark:text-bloom-100 border-bloom-400 dark:border-bloom-600 shadow-2xs font-bold'
+                  : 'bg-white/60 dark:bg-bloom-plum/30 text-bloom-700 dark:text-bloom-300 border-bloom-200 dark:border-bloom-borderNight'
+              ]"
+            >
+              <span>⭐</span>
+              <span>Medium</span>
+            </button>
+            <button
+              type="button"
+              @click="priority = 'high'"
+              class="py-1.5 px-3 rounded-xl border text-xs font-semibold font-soft flex items-center justify-center gap-1.5 transition-all"
+              :class="[
+                priority === 'high'
+                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-400 dark:border-rose-700 shadow-2xs font-bold animate-pulse'
+                  : 'bg-white/60 dark:bg-bloom-plum/30 text-bloom-700 dark:text-bloom-300 border-bloom-200 dark:border-bloom-borderNight'
+              ]"
+            >
+              <span>🔥</span>
+              <span>High</span>
+            </button>
           </div>
         </div>
 
@@ -234,7 +356,7 @@ function handleSubmit() {
                   Daily Recurring Task
                 </p>
                 <p class="text-[11px] text-bloom-600 dark:text-bloom-400">
-                  Automatically populates this habit for each day in range
+                  Tracked atomically in task_completions database table
                 </p>
               </div>
             </div>
