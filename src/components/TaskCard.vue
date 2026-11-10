@@ -9,7 +9,8 @@ import {
   Pencil,
   Trash2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Play
 } from 'lucide-vue-next'
 import { getCountdownBadge, formatShortDate } from '../utils/dateUtils'
 
@@ -24,7 +25,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['toggle-complete', 'edit-task', 'delete-task'])
+const emit = defineEmits(['toggle-complete', 'edit-task', 'delete-task', 'do-now-task'])
 
 const showDescription = ref(false)
 const showMenu = ref(false)
@@ -185,8 +186,19 @@ const priorityBadge = computed(() => {
         </div>
       </div>
 
-      <!-- Quick Actions (Edit / Delete) -->
+      <!-- Quick Actions (Do Now / Edit / Delete) -->
       <div class="flex items-center gap-1 flex-shrink-0">
+        <!-- Do Now Button (only for active tasks) -->
+        <button
+          v-if="!task.is_completed"
+          @click="emit('do-now-task', task)"
+          class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-bloom-500 hover:bg-bloom-600 text-white text-[11px] font-semibold transition-colors active:scale-90 shadow-pink-glow font-soft"
+          title="Focus on this task now"
+        >
+          <Play class="w-3 h-3" />
+          <span class="hidden sm:inline">Do Now</span>
+        </button>
+
         <button
           @click="emit('edit-task', task)"
           class="p-1.5 rounded-lg text-bloom-500 hover:text-bloom-700 hover:bg-bloom-100 dark:hover:bg-bloom-plum/60 transition-colors"
@@ -206,3 +218,5 @@ const priorityBadge = computed(() => {
     </div>
   </div>
 </template>
+
+

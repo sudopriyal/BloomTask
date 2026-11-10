@@ -14,6 +14,7 @@ import CompletedSection from './components/CompletedSection.vue'
 import TaskModal from './components/TaskModal.vue'
 import AuthModal from './components/AuthModal.vue'
 import SubjectManagerModal from './components/SubjectManagerModal.vue'
+import FocusTimer from './components/FocusTimer.vue'
 
 import {
   getTodayString,
@@ -67,6 +68,7 @@ const userProfile = ref(null)
 const isConnected = ref(false)
 const showAuthModal = ref(false)
 const showSubjectsModal = ref(false)
+const focusTask = ref(null)
 
 // =================== DATA STATE (MULTI-TABLE) ===================
 const rawTasks = ref([])
@@ -452,18 +454,20 @@ async function handleQuickAddTask() {
   })
 }
 
-async function handleLoadStarterTemplates() {
-  const today = getTodayString()
-  const starters = [
-    { title: '📖 Review today’s lecture notes', due_date: today, priority: 'medium', subject: null },
-    { title: '✨ Daily problem set / flashcard drill', due_date: today, priority: 'high', is_recurring: true, recurring_start_date: today, recurring_end_date: addDays(today, 6), subject: null },
-    { title: '🎀 Organize study materials & weekly goals', due_date: addDays(today, 2), priority: 'low', subject: null }
-  ]
-  for (const item of starters) {
-    await handleSaveTask(item)
-  }
+
+
+function handleDoNowTask(task) {
+  focusTask.value = task
 }
 
+function handleFocusBack() {
+  focusTask.value = null
+}
+
+function handleFocusMarkComplete(task) {
+  handleToggleComplete(task)
+  focusTask.value = null
+}
 function handleAuthSuccess(user) {
   currentUser.value = user
   isConnected.value = isSupabaseConnected()
@@ -472,7 +476,14 @@ function handleAuthSuccess(user) {
 </script>
 
 <template>
-  <div class="min-h-screen bg-bloom-50 dark:bg-bloom-night transition-colors duration-300 pb-20">
+  <FocusTimer
+    v-if="focusTask"
+    :task="focusTask"
+    :is-dark="isDark"
+    @back="handleFocusBack"
+    @mark-complete="handleFocusMarkComplete"
+  />
+  <div v-if="!focusTask" class="min-h-screen bg-bloom-50 dark:bg-bloom-night transition-colors duration-300 pb-20">
     <!-- Header with Dynamic Date, Theme Switcher and Bloom Progress -->
     <BloomHeader
       :is-dark="isDark"
@@ -560,12 +571,6 @@ function handleAuthSuccess(user) {
             >
               Define Topics
             </button>
-            <button
-              @click="handleLoadStarterTemplates"
-              class="px-4 py-2 rounded-xl bg-bloom-100 hover:bg-bloom-200 dark:bg-bloom-plum/50 text-bloom-800 dark:text-bloom-200 text-xs font-semibold font-soft transition-all"
-            >
-              🌱 Add 3 Starter Tasks
-            </button>
           </div>
         </div>
 
@@ -609,6 +614,7 @@ function handleAuthSuccess(user) {
                 @toggle-complete="handleToggleComplete"
                 @edit-task="handleEditTask"
                 @delete-task="handleDeleteTask"
+                @do-now-task="handleDoNowTask"
               />
             </div>
           </div>
@@ -633,6 +639,7 @@ function handleAuthSuccess(user) {
               @toggle-complete="handleToggleComplete"
               @edit-task="handleEditTask"
               @delete-task="handleDeleteTask"
+                @do-now-task="handleDoNowTask"
             />
           </template>
         </draggable>
@@ -643,6 +650,7 @@ function handleAuthSuccess(user) {
           @toggle-complete="handleToggleComplete"
           @edit-task="handleEditTask"
           @delete-task="handleDeleteTask"
+                @do-now-task="handleDoNowTask"
           @clear-all="handleClearAllCompleted"
         />
       </div>

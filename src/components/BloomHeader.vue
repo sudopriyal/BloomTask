@@ -100,7 +100,7 @@ const bloomMoodText = computed(() => {
           <h1 class="text-3xl sm:text-4xl md:text-5xl font-decorative font-bold tracking-wider text-bloom-900 dark:text-bloom-100 drop-shadow-sm">
             Bloom Task
           </h1>
-          <span class="text-2xl sm:text-3xl animate-petal" style="animation-delay: 2s;">🌺</span>
+          <span class="text-2xl sm:text-3xl animate-petal">🌸</span>
         </div>
         <p class="font-display italic text-sm sm:text-base text-bloom-700 dark:text-bloom-300/90 font-medium">
           Personalized Study & Task Tracker
