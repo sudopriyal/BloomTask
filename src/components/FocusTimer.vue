@@ -258,7 +258,7 @@ onUnmounted(() => {
               {{ timeDisplay }}
             </span>
             <span class="text-xs text-bloom-500 dark:text-bloom-400 font-soft">
-              {{ isFinished ? '🎉 Time's up!' : isRunning ? 'Focus in progress...' : 'Paused' }}
+              {{ isFinished ? "🎉 Time's up!" : isRunning ? 'Focus in progress...' : 'Paused' }}
             </span>
           </div>
         </div>
